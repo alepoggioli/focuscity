@@ -1,0 +1,19 @@
+# Android / Gradle
+*.iml
+.gradle
+/local.properties
+/.idea
+.DS_Store
+/build
+/app/build
+/captures
+.externalNativeBuild
+.cxx
+*.apk
+*.ap_
+*.dex
+
+# Gradle wrapper JAR (will be generated in CI)
+gradle/wrapper/gradle-wrapper.jar
+gradlew
+gradlew.bat
