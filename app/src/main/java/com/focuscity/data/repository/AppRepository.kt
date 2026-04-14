@@ -89,9 +89,9 @@ class AppRepository(private val db: AppDatabase) {
     suspend fun initializeCity() {
         val buildings = buildingDao.getAllBuildingsOnce()
         if (buildings.isEmpty()) {
-            // Place Hall at center of 16×16 grid (occupies cells 6-8 in both axes)
+            // Place Hall at center of 50x50 grid
             buildingDao.insert(
-                Building(type = BuildingType.HALL.name, gridX = 6, gridY = 6)
+                Building(type = BuildingType.HALL.name, gridX = 23, gridY = 23)
             )
         }
     }

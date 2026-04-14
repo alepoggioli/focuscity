@@ -15,5 +15,7 @@ data class FocusSession(
     val maxForgiveness: Int = 0,
     val completed: Boolean = false,
     val cancelledEarly: Boolean = false,
+    val timeOutsideAppSeconds: Int = 0,
+    val timeOutsideAppInstances: Int = 0,
     val date: Long = System.currentTimeMillis()
 )

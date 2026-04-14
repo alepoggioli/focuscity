@@ -187,25 +187,8 @@ fun SessionSetupScreen(
             // ── Info Card ──
             InfoCard(setup.type, setup.difficulty)
 
-            // ── Estimated Coins ──
-            if (setup.type == SessionType.TIMER) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Est. reward: ",
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = TextSecondary
-                    )
-                    Text(
-                        text = "\uD83E\uDE99 ${viewModel.estimatedCoins()}",
-                        style = MaterialTheme.typography.headlineSmall,
-                        color = CoinGold
-                    )
-                }
-            }
+            // Removed estimated coins display as per request
+
 
             // ── Start Button ──
             Button(

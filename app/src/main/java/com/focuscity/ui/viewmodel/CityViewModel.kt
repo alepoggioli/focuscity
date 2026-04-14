@@ -26,7 +26,7 @@ class CityViewModel(application: Application) : AndroidViewModel(application) {
     val cityState: StateFlow<CityState> = _cityState.asStateFlow()
 
     companion object {
-        const val GRID_SIZE = 16
+        const val GRID_SIZE = 50
     }
 
     init {

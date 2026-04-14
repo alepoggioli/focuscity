@@ -15,6 +15,9 @@ data class StatsState(
     val totalMinutes: Int = 0,
     val selectedRange: Int = 7,             // days
     val focusDays: List<Boolean> = emptyList(),
+    val totalActiveDays: Int = 0,
+    val avgTimeOutsideSeconds: Int = 0,
+    val avgTimeOutsideInstances: Int = 0,
     val isLoading: Boolean = true
 )
 
@@ -51,11 +54,26 @@ class StatsViewModel(application: Application) : AndroidViewModel(application) {
 
             val sessionsPerWeek = if (totalCount > 0) totalCount / weeksActive else 0.0
 
+            val totalActiveDays = if (firstDate != null) {
+                ((System.currentTimeMillis() - firstDate) / 86_400_000.0).toInt().coerceAtLeast(1)
+            } else 0
+
+            // Advanced stats (average over easy/hard sessions)
+            val allSessions = repository.allSessions.first()
+            val outsideSecondsTotal = allSessions.sumOf { it.timeOutsideSeconds }
+            val outsideInstancesTotal = allSessions.sumOf { it.timeOutsideInstances }
+            
+            val avgOutsideSecs = if (totalCount > 0) outsideSecondsTotal / totalCount else 0
+            val avgOutsideInst = if (totalCount > 0) outsideInstancesTotal / totalCount else 0
+
             _statsState.value = _statsState.value.copy(
                 avgSessionMinutes = avgLength,
                 avgSessionsPerWeek = sessionsPerWeek,
                 totalSessions = totalCount,
                 totalMinutes = profile.totalFocusMinutes,
+                totalActiveDays = totalActiveDays,
+                avgTimeOutsideSeconds = avgOutsideSecs,
+                avgTimeOutsideInstances = avgOutsideInst,
                 isLoading = false
             )
 

@@ -43,7 +43,9 @@ data class SessionState(
     val isComplete: Boolean = false,
     val endReason: EndReason = EndReason.NONE,
     val finalMinutes: Int = 0,
-    val finalCoins: Int = 0
+    val finalCoins: Int = 0,
+    val timeOutsideSeconds: Int = 0,
+    val timeOutsideInstances: Int = 0
 )
 
 // ── Service ─────────────────────────────────────────────────
@@ -54,6 +56,7 @@ class FocusService : Service() {
     private var timerJob: Job? = null
     private lateinit var repository: AppRepository
     private var lifecycleObserver: DefaultLifecycleObserver? = null
+    private var lastBackgroundTimeMs: Long? = null
 
     companion object {
         private val _sessionState = MutableStateFlow(SessionState())
@@ -156,10 +159,8 @@ class FocusService : Service() {
             }
         }
 
-        // Hard mode: watch for app switches
-        if (config.difficulty == Difficulty.HARD) {
-            setupHardModeMonitoring()
-        }
+        // Monitor app foreground/background
+        setupBackgroundMonitoring()
     }
 
     private fun endSession(reason: EndReason) {
@@ -167,6 +168,14 @@ class FocusService : Service() {
         if (!state.isRunning && !state.isComplete) {
             stopCleanup()
             return
+        }
+
+        // If we end while backgrounded, update time outside.
+        var finalOutSecs = state.timeOutsideSeconds
+        lastBackgroundTimeMs?.let { bgTime ->
+            val timeOutside = ((System.currentTimeMillis() - bgTime) / 1000).toInt()
+            finalOutSecs += timeOutside
+            lastBackgroundTimeMs = null
         }
 
         val elapsedMinutes = (state.elapsedSeconds / 60).toInt()
@@ -182,7 +191,8 @@ class FocusService : Service() {
             isComplete = true,
             endReason = reason,
             finalMinutes = elapsedMinutes,
-            finalCoins = finalCoins
+            finalCoins = finalCoins,
+            timeOutsideSeconds = finalOutSecs
         )
 
         // Persist session
@@ -198,7 +208,9 @@ class FocusService : Service() {
                     violations = state.violations,
                     maxForgiveness = state.config.maxForgiveness,
                     completed = reason == EndReason.COMPLETED,
-                    cancelledEarly = reason == EndReason.CANCELLED
+                    cancelledEarly = reason == EndReason.CANCELLED,
+                    timeOutsideSeconds = finalOutSecs,
+                    timeOutsideInstances = state.timeOutsideInstances
                 )
             )
         }
@@ -213,32 +225,58 @@ class FocusService : Service() {
 
     // ── Hard mode ─────────────────────────────────────────
 
-    private fun setupHardModeMonitoring() {
+    // ── Background Monitoring ─────────────────────────────────────────
+
+    private fun setupBackgroundMonitoring() {
         lifecycleObserver = object : DefaultLifecycleObserver {
             override fun onStop(owner: LifecycleOwner) {
                 // App left foreground
                 val state = _sessionState.value
                 if (!state.isRunning) return
 
-                when (state.config.type) {
-                    SessionType.STOPWATCH -> {
-                        // Stopwatch: session ends immediately
-                        endSession(EndReason.APP_SWITCH)
-                    }
-                    SessionType.TIMER -> {
-                        // Timer: count violation
-                        val newViolations = state.violations + 1
-                        val newForgiveness = state.forgivenessRemaining - 1
+                lastBackgroundTimeMs = System.currentTimeMillis()
 
-                        if (newForgiveness < 0) {
-                            endSession(EndReason.FORGIVENESS_EXCEEDED)
-                        } else {
-                            _sessionState.value = state.copy(
-                                violations = newViolations,
-                                forgivenessRemaining = newForgiveness
-                            )
+                if (state.config.difficulty == Difficulty.HARD) {
+                    when (state.config.type) {
+                        SessionType.STOPWATCH -> {
+                            // Stopwatch: session ends immediately
+                            endSession(EndReason.APP_SWITCH)
+                        }
+                        SessionType.TIMER -> {
+                            // Timer: count violation
+                            val newViolations = state.violations + 1
+                            val newForgiveness = state.forgivenessRemaining - 1
+
+                            if (newForgiveness < 0) {
+                                endSession(EndReason.FORGIVENESS_EXCEEDED)
+                            } else {
+                                _sessionState.value = state.copy(
+                                    violations = newViolations,
+                                    forgivenessRemaining = newForgiveness,
+                                    timeOutsideInstances = state.timeOutsideInstances + 1
+                                )
+                            }
                         }
                     }
+                } else {
+                    // Easy mode explicitly allows moving out of app
+                    _sessionState.value = state.copy(
+                        timeOutsideInstances = state.timeOutsideInstances + 1
+                    )
+                }
+            }
+
+            override fun onStart(owner: LifecycleOwner) {
+                // App entered foreground
+                val state = _sessionState.value
+                if (!state.isRunning) return
+
+                lastBackgroundTimeMs?.let { bgTime ->
+                    val timeOutside = ((System.currentTimeMillis() - bgTime) / 1000).toInt()
+                    _sessionState.value = state.copy(
+                        timeOutsideSeconds = state.timeOutsideSeconds + timeOutside
+                    )
+                    lastBackgroundTimeMs = null
                 }
             }
         }
