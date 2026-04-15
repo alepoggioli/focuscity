@@ -62,6 +62,18 @@ class FocusService : Service() {
         private val _sessionState = MutableStateFlow(SessionState())
         val sessionState: StateFlow<SessionState> = _sessionState.asStateFlow()
 
+        private const val PREFS_NAME = "focus_service_prefs"
+        private const val KEY_IS_RUNNING = "is_running"
+        private const val KEY_TYPE = "type"
+        private const val KEY_DIFFICULTY = "difficulty"
+        private const val KEY_TARGET = "target"
+        private const val KEY_FORGIVENESS_MAX = "forgiveness_max"
+        private const val KEY_ELAPSED = "elapsed"
+        private const val KEY_VIOLATIONS = "violations"
+        private const val KEY_FORGIVENESS_REM = "forgiveness_rem"
+        private const val KEY_TIME_OUT_SEC = "time_out_sec"
+        private const val KEY_TIME_OUT_INST = "time_out_inst"
+
         const val EXTRA_TYPE = "session_type"
         const val EXTRA_DIFFICULTY = "difficulty"
         const val EXTRA_TARGET = "target_minutes"
@@ -82,17 +94,25 @@ class FocusService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        when (intent?.action) {
-            ACTION_START -> {
-                val config = SessionConfig(
-                    type = SessionType.valueOf(intent.getStringExtra(EXTRA_TYPE) ?: "TIMER"),
-                    difficulty = Difficulty.valueOf(intent.getStringExtra(EXTRA_DIFFICULTY) ?: "EASY"),
-                    targetMinutes = intent.getIntExtra(EXTRA_TARGET, 25),
-                    maxForgiveness = intent.getIntExtra(EXTRA_FORGIVENESS, 3)
-                )
-                startSession(config)
+        if (intent == null || intent.action == null) {
+            // Service restarted by system
+            val saved = loadSessionState()
+            if (saved != null && saved.isRunning) {
+                resumeSession(saved)
             }
-            ACTION_STOP -> endSession(EndReason.CANCELLED)
+        } else {
+            when (intent.action) {
+                ACTION_START -> {
+                    val config = SessionConfig(
+                        type = SessionType.valueOf(intent.getStringExtra(EXTRA_TYPE) ?: "TIMER"),
+                        difficulty = Difficulty.valueOf(intent.getStringExtra(EXTRA_DIFFICULTY) ?: "EASY"),
+                        targetMinutes = intent.getIntExtra(EXTRA_TARGET, 25),
+                        maxForgiveness = intent.getIntExtra(EXTRA_FORGIVENESS, 3)
+                    )
+                    startSession(config)
+                }
+                ACTION_STOP -> endSession(EndReason.CANCELLED)
+            }
         }
         return START_STICKY
     }
@@ -118,7 +138,7 @@ class FocusService : Service() {
 
         // Tick every second
         timerJob = serviceScope.launch {
-            var seconds = 0L
+            var seconds = _sessionState.value.elapsedSeconds
             while (isActive) {
                 delay(1000L)
                 seconds++
@@ -147,10 +167,14 @@ class FocusService : Service() {
                 val currentCoins = CoinCalculator.calculateCoins(elapsedMinutes)
                 val afterPenalty = CoinCalculator.applyViolationPenalty(currentCoins, state.violations)
 
-                _sessionState.value = state.copy(
+                val newState = state.copy(
                     elapsedSeconds = seconds,
                     coinsEarned = afterPenalty
                 )
+                _sessionState.value = newState
+
+                // Persist state regularly
+                saveSessionState(newState)
 
                 // Update notification every 5 seconds to reduce overhead
                 if (seconds % 5 == 0L) {
@@ -161,6 +185,60 @@ class FocusService : Service() {
 
         // Monitor app foreground/background
         setupBackgroundMonitoring()
+    }
+
+    private fun resumeSession(savedState: SessionState) {
+        _sessionState.value = savedState
+        
+        // Ensure foreground
+        val notification = NotificationHelper.buildFocusNotification(
+            this,
+            formatTime(savedState.elapsedSeconds, savedState.config),
+            savedState.config.type == SessionType.TIMER,
+            savedState.coinsEarned
+        )
+        startForeground(NotificationHelper.FOCUS_NOTIFICATION_ID, notification)
+        
+        startTimerLoop(savedState.config)
+        setupBackgroundMonitoring()
+    }
+
+    private fun startTimerLoop(config: SessionConfig) {
+        timerJob?.cancel()
+        timerJob = serviceScope.launch {
+            var seconds = _sessionState.value.elapsedSeconds
+            while (isActive) {
+                delay(1000L)
+                seconds++
+
+                val state = _sessionState.value
+                if (!state.isRunning) break
+
+                val elapsedMinutes = (seconds / 60).toInt()
+                val maxSeconds: Long = when {
+                    config.type == SessionType.TIMER -> config.targetMinutes.toLong() * 60
+                    config.difficulty == Difficulty.EASY -> CoinCalculator.MAX_EASY_MINUTES.toLong() * 60
+                    else -> Long.MAX_VALUE
+                }
+
+                if (seconds >= maxSeconds) {
+                    _sessionState.value = state.copy(elapsedSeconds = seconds)
+                    endSession(EndReason.COMPLETED)
+                    return@launch
+                }
+
+                val currentCoins = CoinCalculator.calculateCoins(elapsedMinutes)
+                val afterPenalty = CoinCalculator.applyViolationPenalty(currentCoins, state.violations)
+
+                val newState = state.copy(elapsedSeconds = seconds, coinsEarned = afterPenalty)
+                _sessionState.value = newState
+                saveSessionState(newState)
+
+                if (seconds % 5 == 0L) {
+                    updateNotification(seconds, config, afterPenalty)
+                }
+            }
+        }
     }
 
     private fun endSession(reason: EndReason) {
@@ -220,6 +298,7 @@ class FocusService : Service() {
             NotificationHelper.showSessionCompleteNotification(this, finalCoins, elapsedMinutes)
         }
 
+        clearSavedSession()
         stopCleanup()
     }
 
@@ -286,6 +365,58 @@ class FocusService : Service() {
                 ProcessLifecycleOwner.get().lifecycle.addObserver(it)
             }
         }
+    }
+
+    // ── Persistence ─────────────────────────────────────────────
+
+    private fun saveSessionState(state: SessionState) {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().apply {
+            putBoolean(KEY_IS_RUNNING, state.isRunning)
+            putString(KEY_TYPE, state.config.type.name)
+            putString(KEY_DIFFICULTY, state.config.difficulty.name)
+            putInt(KEY_TARGET, state.config.targetMinutes)
+            putInt(KEY_FORGIVENESS_MAX, state.config.maxForgiveness)
+            putLong(KEY_ELAPSED, state.elapsedSeconds)
+            putInt(KEY_VIOLATIONS, state.violations)
+            putInt(KEY_FORGIVENESS_REM, state.forgivenessRemaining)
+            putInt(KEY_TIME_OUT_SEC, state.timeOutsideSeconds)
+            putInt(KEY_TIME_OUT_INST, state.timeOutsideInstances)
+            apply()
+        }
+    }
+
+    private fun loadSessionState(): SessionState? {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        if (!prefs.contains(KEY_IS_RUNNING)) return null
+        
+        return SessionState(
+            isRunning = prefs.getBoolean(KEY_IS_RUNNING, false),
+            config = SessionConfig(
+                type = SessionType.valueOf(prefs.getString(KEY_TYPE, "TIMER")!!),
+                difficulty = Difficulty.valueOf(prefs.getString(KEY_DIFFICULTY, "EASY")!!),
+                targetMinutes = prefs.getInt(KEY_TARGET, 25),
+                maxForgiveness = prefs.getInt(KEY_FORGIVENESS_MAX, 3)
+            ),
+            elapsedSeconds = prefs.getLong(KEY_ELAPSED, 0),
+            violations = prefs.getInt(KEY_VIOLATIONS, 0),
+            forgivenessRemaining = prefs.getInt(KEY_FORGIVENESS_REM, 3),
+            timeOutsideSeconds = prefs.getInt(KEY_TIME_OUT_SEC, 0),
+            timeOutsideInstances = prefs.getInt(KEY_TIME_OUT_INST, 0)
+        )
+    }
+
+    private fun clearSavedSession() {
+        val prefs = getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        prefs.edit().clear().apply()
+    }
+
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        // App swiped away. If a session is running, make sure we save it.
+        if (_sessionState.value.isRunning) {
+            saveSessionState(_sessionState.value)
+        }
+        super.onTaskRemoved(rootIntent)
     }
 
     // ── Helpers ─────────────────────────────────────────

@@ -29,20 +29,43 @@ import com.focuscity.ui.theme.*
 import com.focuscity.ui.viewmodel.CityViewModel
 import com.focuscity.ui.viewmodel.HomeViewModel
 
-@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun HomeScreen(
     onStartSession: () -> Unit,
     homeViewModel: HomeViewModel = viewModel(),
     cityViewModel: CityViewModel = viewModel()
 ) {
-    val pagerState = rememberPagerState(pageCount = { 2 })
+    var showStats by remember { mutableStateOf(false) }
 
-    HorizontalPager(state = pagerState, modifier = Modifier.fillMaxSize()) { page ->
-        if (page == 0) {
-            CityPage(homeViewModel, cityViewModel, onStartSession)
-        } else {
-            StatsScreen()
+    Box(modifier = Modifier.fillMaxSize()) {
+        CityPage(
+            homeViewModel = homeViewModel,
+            cityViewModel = cityViewModel,
+            onStartSession = onStartSession,
+            onShowStats = { showStats = true }
+        )
+
+        androidx.compose.animation.AnimatedVisibility(
+            visible = showStats,
+            enter = androidx.compose.animation.slideInHorizontally(initialOffsetX = { it }),
+            exit = androidx.compose.animation.slideOutHorizontally(targetOffsetX = { it })
+        ) {
+            Box(modifier = Modifier.fillMaxSize()) {
+                StatsScreen()
+                // Back button for stats
+                IconButton(
+                    onClick = { showStats = false },
+                    modifier = Modifier
+                        .padding(16.dp)
+                        .align(Alignment.TopStart)
+                ) {
+                    Icon(
+                        androidx.compose.material.icons.Icons.Default.Close,
+                        contentDescription = "Close Stats",
+                        tint = TextPrimary
+                    )
+                }
+            }
         }
     }
 }
@@ -52,7 +75,8 @@ fun HomeScreen(
 private fun CityPage(
     homeViewModel: HomeViewModel,
     cityViewModel: CityViewModel,
-    onStartSession: () -> Unit
+    onStartSession: () -> Unit,
+    onShowStats: () -> Unit
 ) {
     val profile by homeViewModel.userProfile.collectAsState()
     val todayMinutes by homeViewModel.todayMinutes.collectAsState()
@@ -99,6 +123,18 @@ private fun CityPage(
                     }
                 }
             )
+
+            // Right-to-left arrow button to open stats
+            IconButton(
+                onClick = onShowStats,
+                modifier = Modifier
+                    .align(Alignment.CenterEnd)
+                    .padding(end = 8.dp)
+                    .size(48.dp)
+                    .background(SurfaceLight.copy(alpha = 0.7f), RoundedCornerShape(24.dp))
+            ) {
+                Text("<", style = MaterialTheme.typography.headlineMedium, color = TextPrimary)
+            }
 
             // Overlays (HUD)
             Column(
@@ -159,7 +195,7 @@ private fun CityPage(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text("Today: $todayMinutes min", color = TextPrimary)
                         Spacer(Modifier.height(4.dp))
-                        Text("Swipe left for Stats", color = TextMuted, style = MaterialTheme.typography.labelSmall)
+                        Text("Stats available on the right", color = TextMuted, style = MaterialTheme.typography.labelSmall)
                     }
                 }
 
