@@ -149,13 +149,13 @@ private fun DrawScope.drawShop(
     val roofFrontLeftPath = Path().apply {
         moveTo(rLeft.x, rLeft.y); lineTo(rBottom.x, rBottom.y); lineTo(topPeak.x, topPeak.y); close()
     }
-    drawPath(roofFrontLeftPath, Purple.copy(alpha = 0.9f))
+    drawPath(roofFrontLeftPath, Color(0xFF9C27B0L).copy(alpha = 0.9f))
     drawPath(roofFrontLeftPath, Color.Black, style = Stroke(2f))
 
     val roofFrontRightPath = Path().apply {
         moveTo(rBottom.x, rBottom.y); lineTo(rRight.x, rRight.y); lineTo(topPeak.x, topPeak.y); close()
     }
-    drawPath(roofFrontRightPath, Purple.copy(alpha = 0.7f))
+    drawPath(roofFrontRightPath, Color(0xFF9C27B0L).copy(alpha = 0.7f))
     drawPath(roofFrontRightPath, Color.Black, style = Stroke(2f))
 
     // Sign "SHOP"
@@ -163,7 +163,7 @@ private fun DrawScope.drawShop(
     drawText(
         textMeasurer = measurer,
         text = "SHOP",
-        style = TextStyle(color = Color.White, fontSize = 14.sp * scale, fontWeight = FontWeight.Bold),
+        style = TextStyle(color = Color.White, fontSize = (14f * scale).sp, fontWeight = FontWeight.Bold),
         topLeft = Offset(centerFacade.x - 20f * scale, centerFacade.y - 15f * scale)
     )
 }
@@ -219,7 +219,7 @@ private fun DrawScope.drawBank(
     drawText(
         textMeasurer = measurer,
         text = "$",
-        style = TextStyle(color = Gold, fontSize = 20.sp * scale, fontWeight = FontWeight.Bold),
+        style = TextStyle(color = Gold, fontSize = (20f * scale).sp, fontWeight = FontWeight.Bold),
         topLeft = Offset(center.x - 5f * scale, center.y - 10f * scale)
     )
 }
@@ -247,7 +247,7 @@ private fun DrawScope.drawCafe(
     drawText(
         textMeasurer = measurer,
         text = "Café",
-        style = TextStyle(color = Color.White, fontSize = 16.sp * scale, fontWeight = FontWeight.Bold),
+        style = TextStyle(color = Color.White, fontSize = (16f * scale).sp, fontWeight = FontWeight.Bold),
         topLeft = Offset(centerFacade.x - 20f * scale, centerFacade.y - 12f * scale)
     )
 }
@@ -282,10 +282,6 @@ private fun DrawScope.drawIsoBlock(
         moveTo(roofZ.x, roofZ.y); lineTo(roofLeft.x, roofLeft.y)
         lineTo(roofBottom.x, roofBottom.y); lineTo(roofRight.x, roofRight.y); close()
     }
-    drawPath(roofPath, color.copy(alpha = 1.2f).coerceIn())
+    drawPath(roofPath, color)
     drawPath(roofPath, borderColor, style = Stroke(width = 2f))
-}
-
-private fun Color.coerceIn(): Color {
-    return Color(red.coerceIn(0f,1f), green.coerceIn(0f,1f), blue.coerceIn(0f,1f), alpha.coerceIn(0f,1f))
 }
